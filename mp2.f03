@@ -113,6 +113,7 @@ INCLUDE 'mp2_mod.f03'
       flush(iOut)
 
 !hph+
+      write(*,*) "Andrew check 1"
       aoInts = ERIs
       call dpReshape4(nBasis,nBasis,nBasis,nBasis,ERIs%realArray,aoInts)
 !hph-
@@ -126,20 +127,21 @@ INCLUDE 'mp2_mod.f03'
       call cpu_time(time0)
       call integralTransformationN8sameSpin(nBasis,nBasisUse,CAlpha,aoInts,moInts)
       call cpu_time(time1)
+      write(iOut,5000) 'Integral Transformation N8',time1-time0
 
 !     call cpu_time(time0)
 !     call integralTransformationN8sameSpin(nBasis,nBasisUse,CAlpha,aoInts,moInts)
 !     call cpu_time(time1)
 
-      call cpu_time(time0)
-
 !
 !     Evaluate the E(2) AA, BB, AB, and BA contribution.
 !
 
+      call cpu_time(time0)
       call E2(nBasis,nBasisUse,nElectronsAlpha,nElectronsBeta, & 
         moInts,moEnergiesAlpha,moEnergiesBeta,E2AA,E2AB) 
       call cpu_time(time1)
+      write(iOut,5000) 'E2',time1-time0
 
       flush(iOut)
 !
@@ -152,7 +154,6 @@ INCLUDE 'mp2_mod.f03'
 !     ^^^ Andrew add later ^^^ (Ask Hrant,doesnt work) ¯\_(ツ)_/¯
 !
 
-      call cpu_time(time1)
       E2BB = E2AA
       E2BA = E2AB
       write(iOut,3000) E2AA,E2AB

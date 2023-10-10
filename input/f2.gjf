@@ -1,0 +1,10 @@
+%chk=f2.chk
+#p sto-3G HF geom=modela output=(mat,MO2ElectronIntegrals) int=noraff 
+#scf=conventional
+ 
+f2 matrix for MP2
+
+0 1
+f f 
+
+f2.mat
