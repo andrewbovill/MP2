@@ -4,6 +4,10 @@ INCLUDE 'mp2_mod.f03'
 !     This program reads AO integrals from a Gaussian matrix file and times
 !     AO-to-MO integral transformations.
 !
+!     Original Written by
+!     -H. P. Hratchian, 2022.
+!
+!     Modified by
 !     -A. J. Bovill, 2023.
 !
 !     USE Connections
@@ -26,8 +30,9 @@ INCLUDE 'mp2_mod.f03'
       type(MQC_Variable)::ERIs,mqcTmpArray
       character(len=512)::tmpString,matrixFilename
       type(mqc_gaussian_unformatted_matrix_file)::GMatrixFile
+      logical::fail=.false.,doN8=.false.,doSlowN5=.true.,  &
+        doRegularN5=.true.,useBLAS=.true.
 !
-
 !     Andrew debug (all integers passed into MQC subroutines must be "kind=int64")
 !
       integer(kind=int64):: newerThanMajor,newerThanMinor,newerThanRevision 
@@ -55,6 +60,8 @@ INCLUDE 'mp2_mod.f03'
       if(nCommands.eq.0)  &
         call mqc_error('No command line arguments provided. The input Gaussian matrix file name is required.')
       call get_command_argument(1,tmpString)
+      call  commandLineArgs(iPrint,nOMP,matrixFilename,doN8,  &
+        doSlowN5,doRegularN5,useBLAS,fail)
       call omp_set_num_threads(nOMP)
       call GMatrixFile%load(matrixFilename)
       write(IOut,1010) TRIM(matrixFilename)
@@ -94,6 +101,7 @@ INCLUDE 'mp2_mod.f03'
 !
 !     Read in and report out the (AO) ERIs.
 !
+      write(*,*) "Andrew check 1"
       call GMatrixFile%getArray('REGULAR 2E INTEGRALS',mqcVarOut=ERIs)
       if(iPrint.ge.2) call ERIs%print(IOut,' ERIs=')
 !
@@ -102,77 +110,52 @@ INCLUDE 'mp2_mod.f03'
 !
       allocate(aoInts(nBasis,nBasis,nBasis,nBasis),  &
         moInts(nBasisUse,nBasisUse,nBasisUse,nBasisUse))
-
       flush(iOut)
 
-!
-!          
-!
-
+!hph+
       aoInts = ERIs
       call dpReshape4(nBasis,nBasis,nBasis,nBasis,ERIs%realArray,aoInts)
-
-      if(iPrint.ge.2) call mqc_print_rank4Tensor_array_real(aoInts,IOut,header='Intrinsic AO Integrals')
-
+!hph-
+      
+      write(*,*) "Andrew check 1"
       flush(iOut)
-
 !
 !     Do N^8 AO --> MO transformation.
+!     Andrew-- only same spin atm.
 !
+      call cpu_time(time0)
       call integralTransformationN8sameSpin(nBasis,nBasisUse,CAlpha,aoInts,moInts)
-      flush(iOut)
-      
+      call cpu_time(time1)
+
+!     call cpu_time(time0)
+!     call integralTransformationN8sameSpin(nBasis,nBasisUse,CAlpha,aoInts,moInts)
+!     call cpu_time(time1)
+
+      call cpu_time(time0)
+
 !
 !     Evaluate the E(2) AA, BB, AB, and BA contribution.
 !
-      write(*,*)
-      write(*,*)' Same Spin E2...'
-      E2AA = float(0)
-      call cpu_time(time0)
-      do i = 1,nElectronsAlpha
-        do j = 1,nElectronsAlpha
-          do a = nElectronsAlpha+1,nBasisUse
-            do b = nElectronsAlpha+1,nBasisUse
-              deltaIJAB = moEnergiesAlpha(i) + moEnergiesAlpha(j)  &
-                - moEnergiesAlpha(a) - moEnergiesAlpha(b)
-              numerator = moInts(i,a,j,b) - moInts(i,b,j,a)
-              numerator = numerator*numerator
-              if(iPrint.ge.1) write(*,*)' num, denom = ',numerator,deltaIJAB
-              E2AA = E2AA + numerator/(float(4)*deltaIJAB)
-            endDo
-          endDo
-        endDo
-      endDo
+
+      call E2(nBasis,nBasisUse,nElectronsAlpha,nElectronsBeta, & 
+        moInts,moEnergiesAlpha,moEnergiesBeta,E2AA,E2AB) 
       call cpu_time(time1)
-      write(iOut,5000) 'Same Spin E2',time1-time0
+
+      flush(iOut)
+!
+!
+!     Load up AA MO ERIs from the matrixfile and print them out to ensure the
+!     explicit AO-->MO transformations above gave the right answers.
+!
+
+!
+!     ^^^ Andrew add later ^^^ (Ask Hrant,doesnt work) ¯\_(ツ)_/¯
+!
+
+      call cpu_time(time1)
       E2BB = E2AA
-      write(*,*)
-      write(*,*)' Opposite Spin E2...'
-
-      E2AB = float(0)
-      call cpu_time(time0)
-      do i = 1,nElectronsAlpha
-        do j = 1,nElectronsBeta
-          do a = nElectronsAlpha+1,nBasisUse
-            do b = nElectronsBeta+1,nBasisUse
-              deltaIJAB = moEnergiesAlpha(i) + moEnergiesBeta(j)  &
-                - moEnergiesAlpha(a) - moEnergiesBeta(b)
-              numerator = moInts(i,a,j,b)*moInts(i,a,j,b)
-              if(iPrint.ge.1) write(*,*)' num, denom = ',numerator,deltaIJAB
-              E2AB = E2AB + numerator/deltaIJAB
-            endDo
-          endDo
-        endDo
-      endDo
-      call cpu_time(time1)
-      write(iOut,5000) 'Opposite Spin E2',time1-time0
       E2BA = E2AB
-
-      write(iOut,*) "E2AA",E2AA
-      write(iOut,*) "E2BB",E2BB
-      write(iOut,*) "E2AB",E2AB
-      write(iOut,*) "E2BA",E2BA
-
+      write(iOut,3000) E2AA,E2AB
       write(*,*)' Total E2 = ',E2AA+E2BB+E2AB
 !
   999 Continue
@@ -181,15 +164,3 @@ INCLUDE 'mp2_mod.f03'
       write(iOut,8999)
       end program mp2
 
-      subroutine dpReshape4(N1,N2,N3,N4,arrayIn,r4ArrayOut)
-!
-      use iso_fortran_env
-      implicit none
-      integer(kind=int64)::N1,N2,N3,N4
-      real(kind=real64),dimension(N1,N2,N3,N4)::arrayIn,r4ArrayOut
-
-      write(*,*) "Andrew within subroutine"
-      r4ArrayOut = arrayIn
-!
-      return
-      end subroutine dpReshape4
